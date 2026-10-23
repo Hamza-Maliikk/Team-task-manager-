@@ -20,7 +20,11 @@ export default function AuthForm({ mode }) {
     try {
       isRegister ? await register(form) : await login({ email: form.email, password: form.password });
       navigate('/');
-    } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

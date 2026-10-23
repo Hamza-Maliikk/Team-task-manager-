@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-
-
-// const API = 'http://localhost:5000/auth/register';
+import { useAuth } from './context/AuthContext.jsx';
+import { errMsg } from './api';
 
 export default function AuthForm({ mode }) {
   const isRegister = mode === 'register';
@@ -21,7 +20,11 @@ export default function AuthForm({ mode }) {
     try {
       isRegister ? await register(form) : await login({ email: form.email, password: form.password });
       navigate('/');
-    } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
