@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/db.js';
+import { supabase, unwrap } from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, getRole, numericParam } from '../utils/helpers.js';
@@ -9,17 +9,27 @@ const router = Router();
 router.use(requireAuth);
 router.param('id', numericParam);
 
-const SELECT = `
-  SELECT t.id, t.title, t.description, t.status, t.priority,
-         to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
-         t.team_id, tm.name AS team_name,
-         t.assignee_id, a.name AS assignee_name,
-         t.created_by, t.created_at, t.updated_at
-    FROM tasks t
-    JOIN teams tm ON tm.id = t.team_id
-    LEFT JOIN users a ON a.id = t.assignee_id`;
+const TASK_COLUMNS = `
+  id, title, description, status, priority, due_date, team_id,
+  teams!tasks_team_id_fkey(name),
+  assignee_id, assignee:users!tasks_assignee_id_fkey(name),
+  created_by, created_at, updated_at`;
 
-const findTask = async (id) => (await query(`${SELECT} WHERE t.id = $1`, [id])).rows[0];
+const formatTask = (task) => {
+  if (!task) return task;
+  const { teams, assignee, ...fields } = task;
+  return {
+    ...fields,
+    team_name: teams?.name ?? null,
+    assignee_name: assignee?.name ?? null,
+  };
+};
+
+const findTask = async (id) => formatTask(unwrap(await supabase
+  .from('tasks')
+  .select(TASK_COLUMNS)
+  .eq('id', id)
+  .maybeSingle()));
 
 // Returns an error message if the assignee is not part of the team
 async function checkAssignee(teamId, assigneeId) {
@@ -29,18 +39,30 @@ async function checkAssignee(teamId, assigneeId) {
 
 router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { teamId, assigneeId, status, search } = req.query;
-  const params = [req.user.id];
-  // Only tasks from teams the user belongs to
-  const where = ['t.team_id IN (SELECT team_id FROM team_members WHERE user_id = $1)'];
-  const add = (sql, value) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
+  const memberships = unwrap(await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', req.user.id));
+  const teamIds = memberships.map(({ team_id }) => team_id);
+  if (teamIds.length === 0) return res.json([]);
 
-  if (teamId) add('t.team_id = ?', teamId);
-  if (assigneeId) add('t.assignee_id = ?', assigneeId);
-  if (status) add('t.status = ?', status);
-  if (search) add('(t.title ILIKE ? OR t.description ILIKE ?)', `%${search.replace(/[\\%_]/g, '\\$&')}%`);
+  let request = supabase
+    .from('tasks')
+    .select(TASK_COLUMNS)
+    .in('team_id', teamIds)
+    .order('created_at', { ascending: false });
 
-  const { rows } = await query(`${SELECT} WHERE ${where.join(' AND ')} ORDER BY t.created_at DESC`, params);
-  res.json(rows);
+  if (teamId) request = request.eq('team_id', teamId);
+  if (assigneeId) request = request.eq('assignee_id', assigneeId);
+  if (status) request = request.eq('status', status);
+  if (search) {
+    const pattern = search
+      .replace(/[\\%_]/g, '\\$&')
+      .replace(/"/g, '\\"');
+    request = request.or(`title.ilike."%${pattern}%",description.ilike."%${pattern}%"`);
+  }
+
+  res.json(unwrap(await request).map(formatTask));
 }));
 
 router.post('/', validate(createTaskSchema), asyncHandler(async (req, res) => {
@@ -49,11 +71,20 @@ router.post('/', validate(createTaskSchema), asyncHandler(async (req, res) => {
   const problem = await checkAssignee(b.team_id, b.assignee_id);
   if (problem) return res.status(400).json({ message: problem });
 
-  const { rows: [{ id }] } = await query(
-    `INSERT INTO tasks (title, description, status, priority, due_date, team_id, assignee_id, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-    [b.title, b.description, b.status, b.priority, b.due_date || null, b.team_id, b.assignee_id ?? null, req.user.id]
-  );
+  const { id } = unwrap(await supabase
+    .from('tasks')
+    .insert({
+      title: b.title,
+      description: b.description,
+      status: b.status,
+      priority: b.priority,
+      due_date: b.due_date || null,
+      team_id: b.team_id,
+      assignee_id: b.assignee_id ?? null,
+      created_by: req.user.id,
+    })
+    .select('id')
+    .single());
   res.status(201).json(await findTask(id));
 }));
 
@@ -65,11 +96,18 @@ router.put('/:id', validate(updateTaskSchema), asyncHandler(async (req, res) => 
   const problem = await checkAssignee(task.team_id, b.assignee_id);
   if (problem) return res.status(400).json({ message: problem });
 
-  await query(
-    `UPDATE tasks SET title = $1, description = $2, status = $3, priority = $4, due_date = $5,
-                      assignee_id = $6, updated_at = now() WHERE id = $7`,
-    [b.title, b.description, b.status, b.priority, b.due_date || null, b.assignee_id ?? null, task.id]
-  );
+  unwrap(await supabase
+    .from('tasks')
+    .update({
+      title: b.title,
+      description: b.description,
+      status: b.status,
+      priority: b.priority,
+      due_date: b.due_date || null,
+      assignee_id: b.assignee_id ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', task.id));
   res.json(await findTask(task.id));
 }));
 
@@ -80,7 +118,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (role !== 'owner' && task.created_by !== req.user.id)
     return res.status(403).json({ message: 'Only the task creator or team owner can delete this task' });
 
-  await query('DELETE FROM tasks WHERE id = $1', [task.id]);
+  unwrap(await supabase.from('tasks').delete().eq('id', task.id));
   res.status(204).end();
 }));
 

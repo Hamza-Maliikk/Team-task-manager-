@@ -1,10 +1,19 @@
-import pg from 'pg';
+import { createClient } from '@supabase/supabase-js';
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  // Only needed for hosts whose connection string has no sslmode
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+const { NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY} = process.env;
+
+if (!NEXT_PUBLIC_SUPABASE_URL || !NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY are required');
+}
+
+export const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
 });
 
-export const query = (text, params) => pool.query(text, params);
-export default pool;
+export function unwrap({ data, error }) {
+  if (error) throw error;
+  return data;
+}

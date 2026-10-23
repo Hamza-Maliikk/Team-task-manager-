@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import passport from '../config/passport.js';
-import { query } from '../config/db.js';
+import { supabase, unwrap } from '../config/db.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/helpers.js';
 import { registerSchema, loginSchema } from '../validators.js';
@@ -21,10 +21,11 @@ router.post('/register', limiter, validate(registerSchema), asyncHandler(async (
   const hash = await bcrypt.hash(password, 12);
   let user;
   try {
-    ({ rows: [user] } = await query(
-      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
-      [name, email, hash]
-    ));
+    user = unwrap(await supabase
+      .from('users')
+      .insert({ name, email, password_hash: hash })
+      .select('id, name, email')
+      .single());
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ message: 'Email is already registered' });
     throw err;

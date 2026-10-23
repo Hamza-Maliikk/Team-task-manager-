@@ -40,7 +40,7 @@ app.use('/teams', teamRoutes);
 app.use('/tasks', taskRoutes);
 
 // Production: serve the React build from the same origin (keeps the session cookie first-party)
-const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../client/dist');
+const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../client/dist');
 if (fs.existsSync(dist)) {
   app.use(express.static(dist));
   app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));

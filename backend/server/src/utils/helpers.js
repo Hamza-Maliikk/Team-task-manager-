@@ -1,11 +1,16 @@
-import { query } from '../config/db.js';
+import { supabase, unwrap } from '../config/db.js';
 
 // Lets route handlers throw / reject without try-catch boilerplate
 export const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // Returns 'owner' | 'member' | null
 export async function getRole(teamId, userId) {
-  const { rows: [row] } = await query('SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2', [teamId, userId]);
+  const row = unwrap(await supabase
+    .from('team_members')
+    .select('role')
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .maybeSingle());
   return row?.role ?? null;
 }
 

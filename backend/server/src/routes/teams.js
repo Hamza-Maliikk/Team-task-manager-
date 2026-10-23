@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import pool, { query } from '../config/db.js';
+import { supabase, unwrap } from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, getRole, numericParam } from '../utils/helpers.js';
@@ -19,64 +19,113 @@ const owner = (req, res, next) =>
   req.role === 'owner' ? next() : res.status(403).json({ message: 'Only the team owner can do this' });
 
 router.get('/', asyncHandler(async (req, res) => {
-  const { rows } = await query(
-    `SELECT t.id, t.name, t.owner_id, m.role,
-            (SELECT COUNT(*)::int FROM team_members WHERE team_id = t.id) AS member_count
-       FROM teams t JOIN team_members m ON m.team_id = t.id AND m.user_id = $1
-      ORDER BY t.name`,
-    [req.user.id]
-  );
-  res.json(rows);
+  const memberships = unwrap(await supabase
+    .from('team_members')
+    .select('team_id, role, teams!inner(id, name, owner_id)')
+    .eq('user_id', req.user.id));
+  if (memberships.length === 0) return res.json([]);
+
+  const teamIds = memberships.map(({ team_id }) => team_id);
+  const memberRows = unwrap(await supabase
+    .from('team_members')
+    .select('team_id')
+    .in('team_id', teamIds));
+  const memberCounts = new Map();
+  for (const { team_id } of memberRows) {
+    memberCounts.set(team_id, (memberCounts.get(team_id) || 0) + 1);
+  }
+
+  res.json(memberships
+    .map(({ team_id, role, teams }) => ({
+      ...teams,
+      role,
+      member_count: memberCounts.get(team_id) || 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name)));
 }));
 
 router.post('/', validate(teamSchema), asyncHandler(async (req, res) => {
-  const client = await pool.connect();
+  const team = unwrap(await supabase
+    .from('teams')
+    .insert({ name: req.body.name, owner_id: req.user.id })
+    .select()
+    .single());
+
   try {
-    await client.query('BEGIN');
-    const { rows: [team] } = await client.query('INSERT INTO teams (name, owner_id) VALUES ($1, $2) RETURNING *', [req.body.name, req.user.id]);
-    await client.query("INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')", [team.id, req.user.id]);
-    await client.query('COMMIT');
-    res.status(201).json(team);
+    unwrap(await supabase
+      .from('team_members')
+      .insert({ team_id: team.id, user_id: req.user.id, role: 'owner' }));
   } catch (err) {
-    await client.query('ROLLBACK');
+    const cleanup = await supabase.from('teams').delete().eq('id', team.id);
+    if (cleanup.error) console.error('Failed to remove team after owner membership creation failed:', cleanup.error);
     throw err;
-  } finally {
-    client.release();
   }
+
+  res.status(201).json(team);
 }));
 
 router.get('/:id', member, asyncHandler(async (req, res) => {
-  const { rows: [team] } = await query('SELECT id, name, owner_id, created_at FROM teams WHERE id = $1', [req.params.id]);
-  const { rows: members } = await query(
-    `SELECT u.id, u.name, u.email, m.role FROM team_members m JOIN users u ON u.id = m.user_id
-      WHERE m.team_id = $1 ORDER BY u.name`,
-    [req.params.id]
-  );
-  res.json({ ...team, members });
+  const team = unwrap(await supabase
+    .from('teams')
+    .select('id, name, owner_id, created_at')
+    .eq('id', req.params.id)
+    .single());
+  const members = unwrap(await supabase
+    .from('team_members')
+    .select('role, users!inner(id, name, email)')
+    .eq('team_id', req.params.id));
+
+  res.json({
+    ...team,
+    members: members
+      .map(({ role, users }) => ({ ...users, role }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  });
 }));
 
 router.put('/:id', member, owner, validate(teamSchema), asyncHandler(async (req, res) => {
-  const { rows: [team] } = await query('UPDATE teams SET name = $1 WHERE id = $2 RETURNING *', [req.body.name, req.params.id]);
+  const team = unwrap(await supabase
+    .from('teams')
+    .update({ name: req.body.name })
+    .eq('id', req.params.id)
+    .select()
+    .single());
   res.json(team);
 }));
 
 router.delete('/:id', member, owner, asyncHandler(async (req, res) => {
-  await query('DELETE FROM teams WHERE id = $1', [req.params.id]);
+  unwrap(await supabase.from('teams').delete().eq('id', req.params.id));
   res.status(204).end();
 }));
 
 router.post('/:id/members', member, validate(memberSchema), asyncHandler(async (req, res) => {
-  const { rows: [user] } = await query('SELECT id, name, email FROM users WHERE email = $1', [req.body.email]);
+  const user = unwrap(await supabase
+    .from('users')
+    .select('id, name, email')
+    .eq('email', req.body.email)
+    .maybeSingle());
   if (!user) return res.status(404).json({ message: 'No user with that email. They need to register first.' });
   if (await getRole(req.params.id, user.id)) return res.status(409).json({ message: 'User is already in this team' });
-  await query("INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member')", [req.params.id, user.id]);
+
+  unwrap(await supabase
+    .from('team_members')
+    .insert({ team_id: req.params.id, user_id: user.id, role: 'member' }));
   res.status(201).json(user);
 }));
 
 router.delete('/:id/members/:userId', member, owner, asyncHandler(async (req, res) => {
   if (Number(req.params.userId) === req.user.id) return res.status(400).json({ message: 'The owner cannot be removed' });
-  await query('DELETE FROM team_members WHERE team_id = $1 AND user_id = $2', [req.params.id, req.params.userId]);
-  await query('UPDATE tasks SET assignee_id = NULL WHERE team_id = $1 AND assignee_id = $2', [req.params.id, req.params.userId]);
+
+  unwrap(await supabase
+    .from('team_members')
+    .delete()
+    .eq('team_id', req.params.id)
+    .eq('user_id', req.params.userId));
+  unwrap(await supabase
+    .from('tasks')
+    .update({ assignee_id: null })
+    .eq('team_id', req.params.id)
+    .eq('assignee_id', req.params.userId));
   res.status(204).end();
 }));
 

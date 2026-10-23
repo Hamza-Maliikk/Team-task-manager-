@@ -1,19 +1,24 @@
 # Team Task Manager
 
-Full stack app: React + Vite + Tailwind (client) and Node.js + Express + PostgreSQL (server).
-Auth: PassportJS (local) + express-session stored in PostgreSQL, HTTP-only cookies, bcrypt-hashed passwords.
+Full stack app: React + Vite + Tailwind (client) and Node.js + Express (server). The server uses the Supabase JavaScript client for database access and stores login sessions in Supabase. Passwords are bcrypt-hashed.
+
+## Supabase setup
+1. Create a Supabase project.
+2. Open the project's **SQL Editor**, paste the contents of [`server/supabase/schema.sql`](./server/supabase/schema.sql), and run it once to create the tables.
+3. In the Supabase project settings, copy the project URL and the **service role** key. The service role key is a server secret: never put it in the client app or commit it.
 
 ## Local setup
-1. Create a PostgreSQL database (local, or a free Neon project) and copy its connection string.
-2. Backend:
+1. Backend:
    ```bash
-   cd server
-   cp .env.example .env      # fill DATABASE_URL and SESSION_SECRET
+   cd backend/server
+   cp .env.example .env
+   ```
+   Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and a unique `SESSION_SECRET` in `.env`, then run:
+   ```bash
    npm install
-   npm run migrate           # creates tables
    npm run dev               # http://localhost:5000
    ```
-3. Frontend (new terminal):
+2. Frontend (new terminal, from the repository root):
    ```bash
    cd client
    cp .env.example .env
@@ -33,17 +38,18 @@ Auth: PassportJS (local) + express-session stored in PostgreSQL, HTTP-only cooki
 | `/tasks`, `/tasks/:id` | POST, PUT, DELETE | team members; delete by creator or owner |
 
 ## Deploy (single service: Express serves the React build)
-Environment variables: `NODE_ENV=production`, `DATABASE_URL`, `SESSION_SECRET`.
+Set `NODE_ENV=production`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SESSION_SECRET` in the hosting provider's server environment.
 
-**Render (free web service) + Neon (free Postgres)**
-- Build command: `npm --prefix client install && npm --prefix client run build && npm --prefix server install`
-- Start command: `node server/src/server.js`
-- Run `npm run migrate` once (from `server/`, with `DATABASE_URL` set) to create the tables.
+**Render**
+- Build command: `npm --prefix client install && npm --prefix client run build && npm --prefix backend/server install`
+- Start command: `node backend/server/src/server.js`
+- Use the same Supabase project and schema as above; no database connection string or server-side migration command is needed.
 
-**Google Cloud Run (+ Cloud SQL)**
+**Docker** (build from the repository root with `backend/Dockerfile`):
 ```bash
-gcloud run deploy team-task-manager --source . --region <region> \
-  --allow-unauthenticated --set-env-vars NODE_ENV=production,SESSION_SECRET=<secret>,DATABASE_URL=<url>
+docker build -f backend/Dockerfile -t team-task-manager .
+docker run -p 8080:8080 -e NODE_ENV=production -e SUPABASE_URL=<url> \
+  -e SUPABASE_SERVICE_ROLE_KEY=<service-role-key> -e SESSION_SECRET=<secret> team-task-manager
 ```
 
 ## Git workflow

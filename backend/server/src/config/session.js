@@ -1,13 +1,66 @@
 import session from 'express-session';
-import connectPg from 'connect-pg-simple';
-import pool from './db.js';
+import { supabase, unwrap } from './db.js';
+
+class SupabaseSessionStore extends session.Store {
+  get(sid, callback) {
+    supabase
+      .from('sessions')
+      .select('sess, expire')
+      .eq('sid', sid)
+      .gt('expire', new Date().toISOString())
+      .maybeSingle()
+      .then((result) => callback(null, unwrap(result)?.sess))
+      .catch(callback);
+  }
+
+  set(sid, sess, callback = () => {}) {
+    const expiration = sess.cookie?.expires
+      ? new Date(sess.cookie.expires).toISOString()
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    supabase
+      .from('sessions')
+      .upsert({ sid, sess, expire: expiration }, { onConflict: 'sid' })
+      .then((result) => {
+        unwrap(result);
+        callback();
+      })
+      .catch(callback);
+  }
+
+  destroy(sid, callback = () => {}) {
+    supabase
+      .from('sessions')
+      .delete()
+      .eq('sid', sid)
+      .then((result) => {
+        unwrap(result);
+        callback();
+      })
+      .catch(callback);
+  }
+
+  touch(sid, sess, callback = () => {}) {
+    const expiration = sess.cookie?.expires
+      ? new Date(sess.cookie.expires).toISOString()
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    supabase
+      .from('sessions')
+      .update({ expire: expiration })
+      .eq('sid', sid)
+      .then((result) => {
+        unwrap(result);
+        callback();
+      })
+      .catch(callback);
+  }
+}
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required in production');
 
-// Sessions live in PostgreSQL; SESSION_STORE=memory is the dev fallback
-const PgStore = connectPg(session);
-const store = process.env.SESSION_STORE === 'memory' ? undefined : new PgStore({ pool, createTableIfMissing: true });
+const store = process.env.SESSION_STORE === 'memory' ? undefined : new SupabaseSessionStore();
 
 export default session({
   store,
