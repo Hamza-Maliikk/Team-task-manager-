@@ -69,6 +69,7 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
             <button onClick={() => onSelect(String(t.id))}
               className={`w-full rounded-lg px-3 py-2 text-left text-sm ${String(selectedId) === String(t.id) ? 'bg-brand-soft font-semibold text-brand-dark' : 'hover:bg-slate-50'}`}>
               {t.name}
+              {t.name.member_count}
             </button>
           </li>
         ))}

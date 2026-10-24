@@ -27,7 +27,7 @@ export default function AuthForm({ mode }) {
 
       toast.success(isRegister ? 'Account created' : 'Logged in');
       // Full reload taake app naya session (cookie) utha le
-      window.location.assign('/login');
+      window.location.assign('/');
     } catch (err) {
       const msg = err.response
         ? err.response.data?.message || 'Request failed'

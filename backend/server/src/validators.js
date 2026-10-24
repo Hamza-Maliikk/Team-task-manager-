@@ -13,7 +13,14 @@ export const registerSchema = Joi.object({
 
 export const loginSchema = Joi.object({ email: email.required(), password: Joi.string().max(72).required() });
 export const teamSchema = Joi.object({ name: text(100).min(2).required() });
-export const memberSchema = Joi.object({ email: email.required() });
+export const createTeamSchema = Joi.object({
+  name: text(100).min(2).required(),
+  leader_email: email.allow('', null),
+});
+export const memberSchema = Joi.object({
+  email: email.required(),
+  role: Joi.string().valid('member', 'leader').default('member'),
+});
 
 const taskFields = {
   title: text(200).min(1).required(),

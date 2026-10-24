@@ -1,22 +1,34 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { authApi } from '../api';
+import { authApi, setUnauthorizedHandler } from '../api';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
+
+// Backend may return the user directly or as { user }
+const pickUser = (d) => d?.user ?? d;
+// Sirf asli user object (id ke saath) ko "logged in" maana jaye
+const isUser = (u) => u && typeof u === 'object' && u.id;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Page khulte hi check karta hai ke pehle se login hai ya nahi
+  // Server kisi bhi request par "Please log in" (401) de to yahan se logout ho jao
   useEffect(() => {
-    authApi.me().then(setUser).catch(() => setUser(null)).finally(() => setLoading(false));
+    setUnauthorizedHandler(() => setUser(null));
   }, []);
 
-  const login = async (data) => setUser(await authApi.login(data));
-  const register = async (data) => setUser(await authApi.register(data));
+  useEffect(() => {
+    authApi.me()
+      .then((d) => { const u = pickUser(d); setUser(isUser(u) ? u : null); })
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = async (data) => setUser(pickUser(await authApi.login(data)));
+  const register = async (data) => setUser(pickUser(await authApi.register(data)));
   const logout = async () => {
-    await authApi.logout().catch(() => {});
+    await authApi.logout();
     setUser(null);
   };
 

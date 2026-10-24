@@ -25,7 +25,7 @@ passport.deserializeUser(async (id, done) => {
   try {
     const user = unwrap(await supabase
       .from('users')
-      .select('id, name, email')
+      .select('id, name, email, role')
       .eq('id', id)
       .maybeSingle());
     done(null, user || false);
