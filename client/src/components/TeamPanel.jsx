@@ -11,8 +11,12 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
 
   const selected = teams.find((t) => String(t.id) === String(selectedId));
 
+  // Sirf admin ko team create karne ka option milega
+  const isAdmin = currentUser?.role === 'admin';
+
   const createTeam = async (e) => {
     e.preventDefault();
+    if (!isAdmin) return;
     try {
       await teamsApi.create({ name });
       toast.success('Team created');
@@ -54,7 +58,9 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
     <aside className="h-fit rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-bold">Teams</h2>
-        <button onClick={() => setCreating(true)} className="btn-primary !px-3 !py-1.5">New team</button>
+        {isAdmin && (
+          <button onClick={() => setCreating(true)} className="btn-primary !px-3 !py-1.5">New team</button>
+        )}
       </div>
 
       <ul className="space-y-1">
@@ -69,15 +75,19 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
             <button onClick={() => onSelect(String(t.id))}
               className={`w-full rounded-lg px-3 py-2 text-left text-sm ${String(selectedId) === String(t.id) ? 'bg-brand-soft font-semibold text-brand-dark' : 'hover:bg-slate-50'}`}>
               {t.name}
-              {t.name.member_count}
+              {t.member_count != null && <span className="ml-1 text-slate-500">({t.member_count})</span>}
             </button>
           </li>
         ))}
       </ul>
-      {teams.length === 0 && <p className="mt-3 text-sm text-slate-500">No teams yet. Create one to start adding tasks.</p>}
+      {teams.length === 0 && (
+        <p className="mt-3 text-sm text-slate-500">
+          {isAdmin ? 'No teams yet. Create one to start adding tasks.' : 'No teams yet.'}
+        </p>
+      )}
       {selected && <button onClick={openManage} className="btn-ghost mt-3 w-full">Manage {selected.name}</button>}
 
-      {creating && (
+      {isAdmin && creating && (
         <Modal title="Create team" onClose={() => setCreating(false)}>
           <form onSubmit={createTeam} className="space-y-4">
             <input className="field" placeholder="Team name" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} autoFocus />

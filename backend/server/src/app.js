@@ -8,6 +8,7 @@ import passport from './config/passport.js';
 import sessionMiddleware from './config/session.js';
 import authRoutes from './routes/auth.js';
 import teamRoutes from './routes/teams.js';
+import userRoutes from './routes/user.js';
 import taskRoutes from './routes/tasks.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
@@ -38,6 +39,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 app.use('/auth', authRoutes);
 app.use('/teams', teamRoutes);
 app.use('/tasks', taskRoutes);
+app.use('/users', userRoutes);
 
 // Production: serve the React build from the same origin (keeps the session cookie first-party)
 const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../client/dist');

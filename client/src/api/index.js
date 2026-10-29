@@ -47,3 +47,8 @@ export const tasksApi = {
   update: (id, d) => http.put(`/tasks/${id}`, d).then((r) => r.data),
   remove: (id) => http.delete(`/tasks/${id}`),
 };
+export const usersApi = {
+  list: () => http.get('/users').then((r) => r.data),
+  create: (d) => http.post('/users', d).then((r) => r.data),
+  resetPassword: (id) => http.post(`/users/${id}/reset-password`).then((r) => r.data),
+};

@@ -40,7 +40,7 @@ async function checkAssignee(teamId, assigneeId) {
   return null;
 }
 
-// Everyone can view: admin sees all tasks, others see tasks of their teams
+// Admin sees all tasks; every other user sees only the tasks assigned to them
 router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { teamId, assigneeId, status, search } = req.query;
 
@@ -50,17 +50,14 @@ router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res
     .order('created_at', { ascending: false });
 
   if (req.user.role !== 'admin') {
-    const memberships = unwrap(await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', req.user.id));
-    const teamIds = memberships.map(({ team_id }) => team_id);
-    if (teamIds.length === 0) return res.json([]);
-    request = request.in('team_id', teamIds);
+    // Non-admin: always restricted to their own assigned tasks
+    // (assigneeId query param is ignored so nobody can see other users' tasks)
+    request = request.eq('assignee_id', req.user.id);
+  } else if (assigneeId) {
+    request = request.eq('assignee_id', assigneeId);
   }
 
   if (teamId) request = request.eq('team_id', teamId);
-  if (assigneeId) request = request.eq('assignee_id', assigneeId);
   if (status) request = request.eq('status', status);
   if (search) {
     const pattern = search

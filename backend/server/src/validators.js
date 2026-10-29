@@ -21,6 +21,10 @@ export const memberSchema = Joi.object({
   email: email.required(),
   role: Joi.string().valid('member', 'leader').default('member'),
 });
+export const createUserSchema = Joi.object({
+  name: text(100).min(2).required(),
+  email: email.required(),
+});
 
 const taskFields = {
   title: text(200).min(1).required(),
