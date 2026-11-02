@@ -11,7 +11,6 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
 
   const selected = teams.find((t) => String(t.id) === String(selectedId));
 
-  // Sirf admin ko team create karne ka option milega
   const isAdmin = currentUser?.role === 'admin';
 
   const createTeam = async (e) => {
@@ -85,7 +84,9 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
           {isAdmin ? 'No teams yet. Create one to start adding tasks.' : 'No teams yet.'}
         </p>
       )}
-      {selected && <button onClick={openManage} className="btn-ghost mt-3 w-full">Manage {selected.name}</button>}
+      {selected && isAdmin && (
+        <button onClick={openManage} className="btn-ghost mt-3 w-full">Manage {selected.name}</button>
+      )}
 
       {isAdmin && creating && (
         <Modal title="Create team" onClose={() => setCreating(false)}>

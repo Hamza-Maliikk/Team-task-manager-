@@ -83,11 +83,12 @@ function DashboardContent({ user }) {
             {manageableTeams.length > 0 ? (
               <button className="btn-primary" onClick={() => setModal({})}>New task</button>
             ) : (
-              teams.length > 0 && <span className="text-sm text-slate-500">View only</span>
+              teams.length > 0 && <span className="text-sm text-slate-500">Your Tasks</span>
             )}
           </div>
 
-          <TaskFilters filters={filters} setFilters={setFilters} members={members} />
+          {/* Filters sirf admin ko nazar aayenge */}
+          <TaskFilters filters={filters} setFilters={setFilters} members={members} currentUser={user} />
 
           {loading ? (
             <p className="py-10 text-center text-slate-500">Loading tasks…</p>

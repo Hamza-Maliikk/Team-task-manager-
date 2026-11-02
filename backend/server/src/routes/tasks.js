@@ -41,6 +41,8 @@ async function checkAssignee(teamId, assigneeId) {
 }
 
 // Admin sees all tasks; every other user sees only the tasks assigned to them
+// Admin sees all tasks, a leader sees all tasks of their team,
+// a team member sees only the tasks assigned to them
 router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res) => {
   const { teamId, assigneeId, status, search } = req.query;
 
@@ -49,15 +51,19 @@ router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res
     .select(TASK_COLUMNS)
     .order('created_at', { ascending: false });
 
+  let leaderTeamIds = null; // null = admin, no extra filtering
   if (req.user.role !== 'admin') {
-    // Non-admin: always restricted to their own assigned tasks
-    // (assigneeId query param is ignored so nobody can see other users' tasks)
-    request = request.eq('assignee_id', req.user.id);
-  } else if (assigneeId) {
-    request = request.eq('assignee_id', assigneeId);
+    const memberships = unwrap(await supabase
+      .from('team_members')
+      .select('team_id, role')
+      .eq('user_id', req.user.id));
+    if (memberships.length === 0) return res.json([]);
+    leaderTeamIds = new Set(memberships.filter((m) => m.role === 'leader').map((m) => m.team_id));
+    request = request.in('team_id', memberships.map((m) => m.team_id));
   }
 
   if (teamId) request = request.eq('team_id', teamId);
+  if (assigneeId) request = request.eq('assignee_id', assigneeId);
   if (status) request = request.eq('status', status);
   if (search) {
     const pattern = search
@@ -66,7 +72,11 @@ router.get('/', validate(taskQuerySchema, 'query'), asyncHandler(async (req, res
     request = request.or(`title.ilike."%${pattern}%",description.ilike."%${pattern}%"`);
   }
 
-  res.json(unwrap(await request).map(formatTask));
+  const tasks = unwrap(await request);
+  const visible = leaderTeamIds
+    ? tasks.filter((t) => leaderTeamIds.has(t.team_id) || t.assignee_id === req.user.id)
+    : tasks;
+  res.json(visible.map(formatTask));
 }));
 
 router.post('/', validate(createTaskSchema), asyncHandler(async (req, res) => {
