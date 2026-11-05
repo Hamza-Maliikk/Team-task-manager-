@@ -30,8 +30,8 @@ router.post('/logout', (req, res, next) => {
       res.clearCookie('ttm.sid', {
         path: '/',
         httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+         secure: process.env.NODE_ENV === 'production',
       });
       res.json({ message: 'Logged out' });
     });
