@@ -8,7 +8,7 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [detail, setDetail] = useState(null);
-
+  const [deleting, setDeleting] = useState(false);
   const selected = teams.find((t) => String(t.id) === String(selectedId));
 
   const isAdmin = currentUser?.role === 'admin';
@@ -43,13 +43,27 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
     } catch (err) { toast.error(errMsg(err)); }
   };
 
-  const deleteTeam = async () => {
-    if (!confirm(`Delete "${detail.name}" and all its tasks?`)) return;
-    try {
-      await teamsApi.remove(detail.id);
-      toast.success('Team deleted'); setDetail(null); onSelect(''); onChanged();
-    } catch (err) { toast.error(errMsg(err)); }
-  };
+const deleteTeam = async () => {
+  if (deleting) return;
+  if (!confirm(`Delete "${detail.name}" and all its tasks?`)) return;
+
+  const id = detail.id;
+  setDeleting(true);
+
+  setDetail(null);
+  onSelect('');
+  onRemoved?.(id);   
+
+  try {
+    await teamsApi.remove(id);
+    toast.success('Team deleted');
+  } catch (err) {
+    toast.error(errMsg(err));
+    onChanged();  
+  } finally {
+    setDeleting(false);
+  }
+};
 
   const isOwner = detail && String(detail.owner_id) === String(currentUser?.id);
 
@@ -117,7 +131,7 @@ export default function TeamPanel({ teams, selectedId, onSelect, onChanged, curr
             <input type="email" className="field" placeholder="Member email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <button className="btn-primary shrink-0">Add member</button>
           </form>
-          {isOwner && <button onClick={deleteTeam} className="btn-danger mt-5">Delete team</button>}
+          {isOwner && <button onClick={deleteTeam} className="btn-danger mt-5">{deleting ? 'Deleting...' : 'Delete team'}</button>}
         </Modal>
       )}
     </aside>
